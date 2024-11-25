@@ -1,6 +1,8 @@
-module Main (main) where
+module Main
+    ( main
+    ) where
 
-import Lib
+import Lib (runTests)
 
 main :: IO ()
-main = someFunc
+main = runTests
