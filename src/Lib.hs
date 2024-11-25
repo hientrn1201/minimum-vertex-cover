@@ -5,19 +5,19 @@ module Lib
     , generateEdges
     , verifyVertexCover
     , vertexCoverBrute
+    -- , vertexCoverParallel
+    -- , vertexCoverParallelChunked
     , createGraph
-    , graph351
-    , graphConnected
-    , graphBipartite
-    , graphBig
-    , runTestCase
-    , runTests
     ) where
-
 import Data.List()
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Maybe (listToMaybe)
+import Data.List()
+import Data.Ord()
+-- import Control.Parallel.Strategies
+-- import Control.Parallel
+-- import Control.DeepSeq()
 
 type Vertex = String
 type Edge = (Vertex, Vertex)
@@ -44,7 +44,32 @@ genSubsets (x:xs) k =
         withoutX = genSubsets xs k
     in withX ++ withoutX
 
--- Find vertex cover using brute force approach
+-- -- Helper function to chunk a list into n approximately equal parts
+-- chunk :: Int -> [a] -> [[a]]
+-- chunk n xs = 
+--     let len = length xs
+--         chunkSize = (len + n - 1) `div` n
+--     in take n $ map (take chunkSize) $ iterate (drop chunkSize) xs
+
+-- -- Parallel subset generation with depth control
+-- genSubsetsParallel :: Int -> [a] -> Int -> [[a]]
+-- genSubsetsParallel depth xs k
+--     | k == 0 = [[]]
+--     | null xs = []
+--     | depth <= 0 = genSubsets xs k  -- Fall back to sequential for deep recursion
+--     | otherwise = case xs of
+--         [] -> []
+--         (x:xs') -> 
+--             let withX = map (x:) (genSubsetsParallel (depth-1) xs' (k-1))
+--                 withoutX = genSubsetsParallel (depth-1) xs' k
+--             in withX `par` (withoutX `pseq` withX ++ withoutX)
+
+-- -- Parallel verification of a chunk of subsets
+-- verifyChunk :: [Edge] -> [[Vertex]] -> Maybe [Vertex]
+-- verifyChunk edges subsets = 
+--     listToMaybe $ filter (\s -> verifyVertexCover s edges) subsets
+
+-- Original sequential vertex cover
 vertexCoverBrute :: Graph -> Maybe [Vertex]
 vertexCoverBrute graph =
     let vertices = Map.keys graph
@@ -59,6 +84,44 @@ vertexCoverBrute graph =
     find _ [] = []
     find p (x:xs) = if p x then [x] else find p xs
 
+-- -- Version 1: Parallel subset generation with parallel verification
+-- vertexCoverParallel :: Graph -> Maybe [Vertex]
+-- vertexCoverParallel graph =
+--     let vertices = Map.keys graph
+--         edges = generateEdges graph
+--         maxSize = length vertices
+--         -- Generate subsets for each size in parallel
+--         candidatesBySize = [1..maxSize] `using` parList rdeepseq
+--         -- For each size, generate and verify subsets in parallel
+--         solutions = map (\size -> 
+--             let subsets = genSubsetsParallel 3 vertices size  -- Control recursion depth
+--                 verificationResults = map (\subset -> 
+--                     verifyVertexCover subset edges `par` 
+--                     if verifyVertexCover subset edges 
+--                         then Just subset 
+--                         else Nothing) subsets
+--             in verificationResults `using` parBuffer 100 rdeepseq) candidatesBySize
+--     in listToMaybe $ catMaybes $ concat solutions
+
+-- -- Version 2: Chunked parallel verification with work stealing
+-- vertexCoverParallelChunked :: Int -> Graph -> Maybe [Vertex]
+-- vertexCoverParallelChunked numChunks graph =
+--     let vertices = Map.keys graph
+--         edges = generateEdges graph
+--         maxSize = length vertices
+--         -- Process each size sequentially, but parallelize within each size
+--         processSize size = 
+--             let subsets = genSubsets vertices size
+--                 -- Divide subsets into chunks for parallel processing
+--                 subsetsChunks = chunk numChunks subsets
+--                 -- Process each chunk in parallel
+--                 chunkResults = map (verifyChunk edges) subsetsChunks 
+--                     `using` parBuffer numChunks rdeepseq
+--             in catMaybes chunkResults
+--         -- Try each size until we find a solution
+--         solutions = [processSize size | size <- [1..maxSize]]
+--     in listToMaybe $ concat solutions
+
 -- Helper function to create a graph from list of edges
 createGraph :: [(Vertex, Vertex)] -> Graph
 createGraph edges =
@@ -67,74 +130,3 @@ createGraph edges =
                 m2 = Map.insertWith (++) v2 [v1] m1
             in m2
     in foldl addEdge Map.empty edges
-
--- Test graphs
-graph351 :: [(Vertex, Vertex)]
-graph351 = [
-    ("A", "B"), 
-    ("B", "C"), 
-    ("C", "D"), ("C", "E"),
-    ("D", "E"), ("D", "F"), ("D", "G"),
-    ("E", "F")
-    ]
-
-graphConnected :: [(Vertex, Vertex)]
-graphConnected = [
-    ("A", "B"), ("A", "C"), ("A", "D"), ("A", "E"), ("A", "F"), ("A", "G"),
-    ("B", "C"), ("B", "D"), ("B", "E"), ("B", "F"), ("B", "G"),
-    ("C", "D"), ("C", "E"), ("C", "F"), ("C", "G"),
-    ("D", "E"), ("D", "F"), ("D", "G"),
-    ("E", "F"), ("E", "G"),
-    ("F", "G")
-    ]
-
-graphBipartite :: [(Vertex, Vertex)]
-graphBipartite = [
-    ("A", "F"), ("A", "G"),
-    ("B", "F"),
-    ("C", "H"), ("C", "G"),
-    ("D", "H"), ("D", "J"),
-    ("E", "I"), ("E", "J")
-    ]
-
-graphBig :: [(Vertex, Vertex)]
-graphBig = [
-    ("A", "B"), ("A", "E"), ("A", "D"),
-    ("B", "E"), ("B", "F"), ("B", "C"),
-    ("C", "F"),
-    ("D", "E"), ("D", "H"), ("D", "G"),
-    ("G", "H"), ("G", "K"), ("G", "J"),
-    ("J", "K"), ("J", "N"), ("J", "M"),
-    ("M", "N"), ("M", "Q"), ("M", "P"),
-    ("P", "Q"), ("P", "T"), ("P", "S"),
-    ("F", "E"), ("F", "I"),
-    ("I", "H"), ("I", "E"), ("I", "L"),
-    ("L", "K"), ("L", "H"), ("L", "O"),
-    ("O", "N"), ("O", "K"), ("O", "R"),
-    ("R", "Q"), ("R", "N"), ("R", "U"),
-    ("E", "H"),
-    ("H", "K"),
-    ("K", "N"),
-    ("N", "Q"),
-    ("Q", "T"),
-    ("T", "U"),
-    ("S", "T")
-    ]
-
--- Function to run a single test case
-runTestCase :: String -> [(Vertex, Vertex)] -> IO ()
-runTestCase name edges = do
-    putStrLn $ "Running Test Case: " ++ name
-    let graph = createGraph edges
-    putStrLn $ "Minimum Vertex Cover: " ++ show (vertexCoverBrute graph)
-    putStrLn $ "Number of vertices: " ++ show (length $ Map.keys graph)
-    putStrLn $ "Number of edges: " ++ show (length $ generateEdges graph)
-    putStrLn ""
-
--- Run all test cases
-runTests :: IO ()
-runTests = do
-    runTestCase "Graph 351" graph351
-    runTestCase "Complete Graph" graphConnected
-    runTestCase "Bipartite Graph" graphBipartite
-    runTestCase "Big Graph" graphBig
