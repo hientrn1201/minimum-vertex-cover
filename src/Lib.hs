@@ -5,19 +5,19 @@ module Lib
     , generateEdges
     , verifyVertexCover
     , vertexCoverBrute
-    -- , vertexCoverParallel
+    , vertexCoverParallel
     -- , vertexCoverParallelChunked
     , createGraph
     ) where
 import Data.List()
 import qualified Data.Map as Map
 import Data.Map (Map)
-import Data.Maybe (listToMaybe)
+import Data.Maybe (listToMaybe, catMaybes)
 import Data.List()
 import Data.Ord()
--- import Control.Parallel.Strategies
--- import Control.Parallel
--- import Control.DeepSeq()
+import Control.Parallel.Strategies
+import Control.Parallel
+import Control.DeepSeq()
 
 type Vertex = String
 type Edge = (Vertex, Vertex)
@@ -52,17 +52,17 @@ genSubsets (x:xs) k =
 --     in take n $ map (take chunkSize) $ iterate (drop chunkSize) xs
 
 -- -- Parallel subset generation with depth control
--- genSubsetsParallel :: Int -> [a] -> Int -> [[a]]
--- genSubsetsParallel depth xs k
---     | k == 0 = [[]]
---     | null xs = []
---     | depth <= 0 = genSubsets xs k  -- Fall back to sequential for deep recursion
---     | otherwise = case xs of
---         [] -> []
---         (x:xs') -> 
---             let withX = map (x:) (genSubsetsParallel (depth-1) xs' (k-1))
---                 withoutX = genSubsetsParallel (depth-1) xs' k
---             in withX `par` (withoutX `pseq` withX ++ withoutX)
+genSubsetsParallel :: Int -> [a] -> Int -> [[a]]
+genSubsetsParallel depth xs k
+    | k == 0 = [[]]
+    | null xs = []
+    | depth <= 0 = genSubsets xs k  -- Fall back to sequential for deep recursion
+    | otherwise = case xs of
+        [] -> []
+        (x:xs') -> 
+            let withX = map (x:) (genSubsetsParallel (depth-1) xs' (k-1))
+                withoutX = genSubsetsParallel (depth-1) xs' k
+            in withX `par` (withoutX `pseq` withX ++ withoutX)
 
 -- -- Parallel verification of a chunk of subsets
 -- verifyChunk :: [Edge] -> [[Vertex]] -> Maybe [Vertex]
@@ -85,23 +85,23 @@ vertexCoverBrute graph =
     find p (x:xs) = if p x then [x] else find p xs
 
 -- -- Version 1: Parallel subset generation with parallel verification
--- vertexCoverParallel :: Graph -> Maybe [Vertex]
--- vertexCoverParallel graph =
---     let vertices = Map.keys graph
---         edges = generateEdges graph
---         maxSize = length vertices
---         -- Generate subsets for each size in parallel
---         candidatesBySize = [1..maxSize] `using` parList rdeepseq
---         -- For each size, generate and verify subsets in parallel
---         solutions = map (\size -> 
---             let subsets = genSubsetsParallel 3 vertices size  -- Control recursion depth
---                 verificationResults = map (\subset -> 
---                     verifyVertexCover subset edges `par` 
---                     if verifyVertexCover subset edges 
---                         then Just subset 
---                         else Nothing) subsets
---             in verificationResults `using` parBuffer 100 rdeepseq) candidatesBySize
---     in listToMaybe $ catMaybes $ concat solutions
+vertexCoverParallel :: Graph -> Maybe [Vertex]
+vertexCoverParallel graph =
+    let vertices = Map.keys graph
+        edges = generateEdges graph
+        maxSize = length vertices
+        -- Generate subsets for each size in parallel
+        candidatesBySize = [1..maxSize] `using` parList rdeepseq
+        -- For each size, generate and verify subsets in parallel
+        solutions = map (\size -> 
+            let subsets = genSubsetsParallel 3 vertices size  -- Control recursion depth
+                verificationResults = map (\subset -> 
+                    let isCover = verifyVertexCover subset edges 
+                    in if isCover
+                        then Just subset 
+                        else Nothing) subsets `using` parList rdeepseq
+            in verificationResults `using` parBuffer 100 rdeepseq) candidatesBySize
+    in listToMaybe $ catMaybes $ concat solutions
 
 -- -- Version 2: Chunked parallel verification with work stealing
 -- vertexCoverParallelChunked :: Int -> Graph -> Maybe [Vertex]
