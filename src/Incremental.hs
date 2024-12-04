@@ -5,34 +5,39 @@ module Incremental
 import Common
 import qualified Data.Map as Map
 import Control.Parallel.Strategies
-import Data.List (nub, sortBy)
-import Data.Maybe (fromMaybe)
+import Data.List (minimumBy)
+import Data.Ord (comparing)
+import Data.Maybe (listToMaybe, catMaybes)
 
--- Parallel Incremental Vertex Cover Solver
 incrementalParallel :: Graph -> Maybe [Vertex]
 incrementalParallel graph =
     let vertices = Map.keys graph
         edges = generateEdges graph
         k = length vertices
+        chunkSize = 1000  -- Size of chunks for parallel processing
 
-        -- Generate all possible vertex covers
-        allPossibleCovers = 
-            concat [genSubsets vertices size | size <- [1 .. k]]
+        -- Process a chunk of subsets and find valid covers
+        processChunk :: [[Vertex]] -> [[Vertex]]
+        processChunk chunk = 
+            filter (\subset -> verifyVertexCover subset edges) chunk
 
-        -- Parallel verification of vertex covers
-        verifyCovers :: [[Vertex]] -> Maybe [Vertex]
-        verifyCovers covers = 
-            let validCovers = parMap rdeepseq 
-                    (\cover -> if verifyVertexCover cover edges then Just cover else Nothing) 
-                    covers
-                validResults = [c | Just c <- validCovers]
-            in if null validResults 
-               then Nothing 
-               else Just (minimumCover validResults)
+        -- Check subsets of a given size using chunks
+        checkSubsetsSize :: Int -> [[Vertex]]
+        checkSubsetsSize size =
+            let allSubsets = genSubsetsParallel 3 vertices size
+                chunks = chunksOf chunkSize allSubsets
+                -- Process chunks in parallel
+                processedChunks = map processChunk chunks `using` parList rdeepseq
+            in concat processedChunks
 
-        -- Find the smallest vertex cover
-        minimumCover :: [[Vertex]] -> [Vertex]
-        minimumCover covers = 
-            head $ sortBy (\a b -> compare (length a) (length b)) covers
+        -- Try each size sequentially until we find a solution
+        findSolution :: Int -> Maybe [Vertex]
+        findSolution size
+            | size > k = Nothing
+            | otherwise =
+                let validCovers = checkSubsetsSize size
+                in if null validCovers
+                   then findSolution (size + 1)
+                   else Just $ minimumBy (comparing length) validCovers
 
-    in verifyCovers allPossibleCovers
+    in findSolution 1
