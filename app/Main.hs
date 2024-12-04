@@ -1,42 +1,86 @@
-module Main
-    ( main
-    ) where
+module Main where
 
-import Lib (vertexCoverBrute, createGraph)
 import System.Environment (getArgs)
+import System.IO (stderr, hPutStrLn)
+import Text.Read (readMaybe)
 import Data.Maybe (catMaybes)
+import qualified Data.Map as Map
+
+import Common
+import Sequential
+import Parallel
+import Incremental
+
+-- Method enum
+data Method = Sequential | Parallel | Incremental
+    deriving (Read, Show, Eq)
 
 main :: IO ()
 main = do
-    -- Get command-line arguments
     args <- getArgs
     case args of
-        [filePath] -> do
-            -- Read the graph data from the file
-            graphData <- readGraphData filePath
-            
-            -- Create the graph from the parsed data
-            let graph = createGraph graphData
-            
-            -- Run the vertex cover algorithm
-            case vertexCoverBrute graph of
-                Nothing -> putStrLn "No vertex cover found."
-                Just cover -> do
-                    putStrLn "Minimum Vertex Cover:"
-                    print cover
-        _ -> putStrLn "Usage: minimum-vertex-cover <path_to_graph_data.txt>"
+        (filePath:methodStrs) -> 
+            case parseMethodList methodStrs of
+                Just methods -> processGraphFile filePath methods
+                Nothing -> showUsage
+        _ -> showUsage
 
--- Function to read graph data from a text file
-readGraphData :: FilePath -> IO [(String, String)]
-readGraphData filePath = do
+showUsage :: IO ()
+showUsage = do
+    hPutStrLn stderr "Usage: minimum-vertex-cover-exe <graph_file.txt> [methods...]"
+    hPutStrLn stderr "Methods available:"
+    hPutStrLn stderr "  Sequential    - Run sequential algorithm"
+    hPutStrLn stderr "  Parallel      - Run parallel algorithm"
+    hPutStrLn stderr "  Incremental   - Run incremental parallel algorithm"
+    hPutStrLn stderr "If no methods specified, runs all methods"
+    fail "Incorrect usage"
+
+parseMethodList :: [String] -> Maybe [Method]
+parseMethodList [] = Just [Sequential, Parallel, Incremental]  -- Default: all methods
+parseMethodList strs = mapM readMaybe strs
+
+processGraphFile :: FilePath -> [Method] -> IO ()
+processGraphFile filePath methods = do
+    putStrLn $ "Processing graph from: " ++ filePath
+    graphData <- readGraphFile filePath
+    let graph = createGraph graphData
+    
+    -- Print input graph details
+    putStrLn "\nInput Graph:"
+    putStrLn $ "Vertices: " ++ show (Map.keys graph)
+    putStrLn $ "Edges: " ++ show (generateEdges graph)
+    
+    -- Run selected methods and print results
+    putStrLn "\nResults:"
+    mapM_ (runMethod graph) methods
+
+runMethod :: Graph -> Method -> IO ()
+runMethod graph method = case method of
+    Sequential -> do
+        putStr "Sequential: "
+        printResult $ bruteForce graph
+    Parallel -> do
+        putStr "Parallel: "
+        printResult $ vertexCoverParallel graph
+    Incremental -> do
+        putStr "Incremental: "
+        printResult $ incrementalParallel graph
+
+printResult :: Maybe [Vertex] -> IO ()
+printResult Nothing = putStrLn "No vertex cover found"
+printResult (Just cover) = putStrLn $ "Found vertex cover: " ++ show cover
+
+-- Read and parse graph file
+readGraphFile :: FilePath -> IO [(String, String)]
+readGraphFile filePath = do
     contents <- readFile filePath
     let edges = map parseEdge (lines contents)
-    return $ catMaybes edges  -- Filter out invalid edges
+    case catMaybes edges of
+        [] -> fail $ "No valid edges found in " ++ filePath
+        validEdges -> return validEdges
 
--- Function to parse a line into an edge
+-- Parse a single edge from a line of text
 parseEdge :: String -> Maybe (String, String)
-parseEdge line =
-    let wordsList = words line
-    in case wordsList of
-        [v1, v2] -> Just (v1, v2)  -- Valid case with exactly two vertices
-        _         -> Nothing  -- Invalid case
+parseEdge line = case words line of
+    [v1, v2] | v1 /= v2 -> Just (v1, v2)  -- Prevent self-loops
+    _ -> Nothing
