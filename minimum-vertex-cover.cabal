@@ -27,7 +27,11 @@ library
   exposed-modules:
       Common
       Incremental
+<<<<<<< Updated upstream
       IncrementalV2
+=======
+      Incrementalv3
+>>>>>>> Stashed changes
       Lib
       Parallel
       Sequential

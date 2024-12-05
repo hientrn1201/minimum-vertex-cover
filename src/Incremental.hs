@@ -8,13 +8,14 @@ import Control.Parallel.Strategies
 import Data.List (minimumBy)
 import Data.Ord (comparing)
 import Data.Maybe (listToMaybe, catMaybes)
+import Control.DeepSeq (deepseq, force)
 
 incrementalParallel :: Graph -> Maybe [Vertex]
 incrementalParallel graph =
     let vertices = Map.keys graph
         edges = generateEdges graph
         k = length vertices
-        chunkSize = 1000  -- Size of chunks for parallel processing
+        chunkSize = 200 -- Size of chunks for parallel processing
 
         -- Process a chunk of subsets and find valid covers
         processChunk :: [[Vertex]] -> [[Vertex]]
@@ -24,10 +25,10 @@ incrementalParallel graph =
         -- Check subsets of a given size using chunks
         checkSubsetsSize :: Int -> [[Vertex]]
         checkSubsetsSize size =
-            let allSubsets = genSubsetsParallel 3 vertices size
+            let allSubsets = genSubsetsMemoized vertices size
                 chunks = chunksOf chunkSize allSubsets
                 -- Process chunks in parallel
-                processedChunks = map processChunk chunks `using` parList rdeepseq
+                processedChunks = map processChunk chunks `using` parBuffer 1000 rdeepseq
             in concat processedChunks
 
         -- Try each size sequentially until we find a solution
