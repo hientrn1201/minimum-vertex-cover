@@ -10,9 +10,10 @@ import Common
 import Sequential
 import Parallel
 import Incremental
+import IncrementalV2
 
 -- Method enum
-data Method = Sequential | Parallel | Incremental
+data Method = Sequential | Parallel | Incremental | IncrementalV2
     deriving (Read, Show, Eq)
 
 main :: IO ()
@@ -32,6 +33,7 @@ showUsage = do
     hPutStrLn stderr "  Sequential    - Run sequential algorithm"
     hPutStrLn stderr "  Parallel      - Run parallel algorithm"
     hPutStrLn stderr "  Incremental   - Run incremental parallel algorithm"
+    hPutStrLn stderr "  IncrementalV2   - Run incremental V2 parallel algorithm"
     hPutStrLn stderr "If no methods specified, runs all methods"
     fail "Incorrect usage"
 
@@ -65,6 +67,9 @@ runMethod graph method = case method of
     Incremental -> do
         putStr "Incremental: "
         printResult $ incrementalParallel graph
+    IncrementalV2 -> do
+        putStr "Incremental: "
+        printResult $ incrementalParallelV2 graph
 
 printResult :: Maybe [Vertex] -> IO ()
 printResult Nothing = putStrLn "No vertex cover found"

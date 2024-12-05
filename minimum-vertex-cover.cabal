@@ -27,6 +27,7 @@ library
   exposed-modules:
       Common
       Incremental
+      IncrementalV2
       Lib
       Parallel
       Sequential
