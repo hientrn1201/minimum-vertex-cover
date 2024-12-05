@@ -10,11 +10,8 @@ import Common
 import Sequential
 import Parallel
 import Incremental
-<<<<<<< Updated upstream
 import IncrementalV2
-=======
 import Incrementalv3
->>>>>>> Stashed changes
 
 -- Method enum
 data Method = Sequential | Parallel | Incremental | IncrementalV2
